@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "{{PROJECT_ROOT}}/.claude/hooks/session-start.sh"
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/session-start.sh"
           }
         ]
       }
@@ -15,7 +15,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "{{PROJECT_ROOT}}/.claude/hooks/session-end.sh"
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/session-end.sh"
           }
         ]
       }
@@ -25,7 +25,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "{{PROJECT_ROOT}}/.claude/hooks/context-enricher.sh"
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/context-enricher.sh"
           }
         ]
       }
@@ -36,7 +36,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "{{PROJECT_ROOT}}/.claude/hooks/validate-docs.sh"
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/validate-docs.sh"
           }
         ]
       }

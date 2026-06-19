@@ -14,11 +14,14 @@
 # - Smart truncation (800 lines max for files, 150 for sections)
 #
 # To customize for your project:
-# 1. Add keyword patterns in the "Keyword-to-Documentation Matching" section
-# 2. Map keywords to your documentation files (supports anchors: file.md#section)
-# 3. The hook will auto-inject matched docs wrapped in XML tags
+# 1. Add entries to docs/GLOSSARY.md (keyword -> file.md#section mappings)
+# 2. The hook reads those mappings at runtime - no need to edit this script
+# 3. Matched docs are auto-injected wrapped in XML tags
 #
 # Compatible with bash 3.x (macOS default) - no associative arrays.
+# Works in two modes:
+#   - Plugin:    project root from $CLAUDE_PROJECT_DIR (set by Claude Code)
+#   - Installer: same env var; falls back to current directory
 # =============================================================================
 
 set -e
@@ -31,7 +34,7 @@ if ! command -v jq &> /dev/null; then
     exit 0
 fi
 
-PROJECT_ROOT="{{PROJECT_ROOT}}"
+PROJECT_ROOT="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 DOCS_DIR="$PROJECT_ROOT/docs"
 
 # -----------------------------------------------------------------------------
@@ -177,81 +180,92 @@ add_doc() {
 # =============================================================================
 # KEYWORD-TO-DOCUMENTATION MATCHING
 # =============================================================================
-# Customize this section for your project!
+# Keyword mappings are read from docs/GLOSSARY.md at runtime. Each glossary
+# bullet of the form:
 #
-# Pattern: case "$PROMPT_LOWER" in
-#            *keyword1*|*keyword2*|*keyword3*)
-#                add_doc "path/to/doc.md"           # Full file
-#                add_doc "path/to/doc.md#section"   # Specific section
-#                ;;
-#          esac
+#     - **keyword** -> `docs/path/to/FILE.md#section` - description
 #
-# The path is relative to your docs/ directory.
+# becomes a trigger: when the prompt contains <keyword> (case-insensitive),
+# the mapped doc is injected. Paths may be written relative to the repo root
+# (with a leading docs/) or relative to docs/ - both resolve correctly.
+#
+# This keeps customization in GLOSSARY.md (a single source of truth) so the
+# hook itself never needs editing - which is what lets it ship as a plugin.
+#
+# If docs/GLOSSARY.md is absent, a small built-in default map is used so the
+# hook still does something useful out of the box.
 # =============================================================================
 
-# Architecture / System design keywords
-case "$PROMPT_LOWER" in
-    *architecture*|*docker*|*container*|*network*|*infrastructure*|*topology*)
-        add_doc "core/ARCHITECTURE.md"
-        ;;
-esac
+# Match keywords defined in docs/GLOSSARY.md
+match_glossary_keywords() {
+    local glossary="$DOCS_DIR/GLOSSARY.md"
+    [ -f "$glossary" ] || return 1
 
-# Database keywords
-case "$PROMPT_LOWER" in
-    *database*|*postgres*|*schema*|*table*|*query*|*sql*|*migration*)
-        add_doc "core/DATABASE.md"
-        ;;
-esac
+    local line kw path kw_lower
+    while IFS= read -r line; do
+        # Only bullet lines that map a **keyword** to a `path` qualify.
+        # (Table rows and prose lack the **...** / backtick pairing.)
+        case "$line" in
+            *'**'*'**'*'`'*'`'*) ;;
+            *) continue ;;
+        esac
 
-# API keywords
-case "$PROMPT_LOWER" in
-    *" api"*|*"api "*|*endpoint*|*route*|*" rest"*|*request*|*response*)
-        add_doc "core/API.md"
-        ;;
-esac
+        # Extract keyword between the first pair of **
+        kw="${line#*\*\*}"
+        kw="${kw%%\*\**}"
+        # Extract path between the first pair of backticks
+        path="${line#*\`}"
+        path="${path%%\`*}"
 
-# Deployment / DevOps keywords
-case "$PROMPT_LOWER" in
-    *deploy*|*"ci/cd"*|*cicd*|*"github action"*|*workflow*|*production*)
-        add_doc "DEPLOYMENT.md"
-        ;;
-esac
+        [ -n "$kw" ] && [ -n "$path" ] || continue
 
-# Troubleshooting / Error keywords
-case "$PROMPT_LOWER" in
-    *troubleshoot*|*" error"*|*"error "*|*debug*|*" fix "*|*issue*|*problem*)
-        add_doc "TROUBLESHOOTING.md"
-        ;;
-esac
+        # Glossary paths are written relative to repo root (docs/...); the
+        # loader resolves relative to docs/, so strip a leading docs/.
+        path="${path#docs/}"
 
-# Contributing keywords
-case "$PROMPT_LOWER" in
-    *contributing*|*contribute*|*guidelines*|*"pull request"*)
-        add_doc "CONTRIBUTING.md"
-        ;;
-esac
+        kw_lower=$(printf '%s' "$kw" | tr '[:upper:]' '[:lower:]')
 
-# =============================================================================
-# Add your own keyword patterns below!
-# =============================================================================
+        case "$PROMPT_LOWER" in
+            *"$kw_lower"*) add_doc "$path" ;;
+        esac
+    done < "$glossary"
 
-# Example: Feature-specific docs with section loading
-# case "$PROMPT_LOWER" in
-#     *authentication*|*login*|*oauth*)
-#         add_doc "features/AUTH.md#oauth-flow"  # Section-level loading
-#         ;;
-# esac
+    return 0
+}
 
-# Example: Testing docs
-# case "$PROMPT_LOWER" in
-#     *test*|*testing*|*jest*|*vitest*|*coverage*)
-#         add_doc "TESTING.md"
-#         ;;
-# esac
+# Built-in fallback map (used only when docs/GLOSSARY.md does not exist)
+match_builtin_defaults() {
+    case "$PROMPT_LOWER" in
+        *architecture*|*docker*|*container*|*network*|*infrastructure*|*topology*)
+            add_doc "core/ARCHITECTURE.md" ;;
+    esac
+    case "$PROMPT_LOWER" in
+        *database*|*postgres*|*schema*|*table*|*query*|*sql*|*migration*)
+            add_doc "core/DATABASE.md" ;;
+    esac
+    case "$PROMPT_LOWER" in
+        *" api"*|*"api "*|*endpoint*|*route*|*" rest"*|*request*|*response*)
+            add_doc "core/API.md" ;;
+    esac
+    case "$PROMPT_LOWER" in
+        *deploy*|*"ci/cd"*|*cicd*|*"github action"*|*workflow*|*production*)
+            add_doc "DEPLOYMENT.md" ;;
+    esac
+    case "$PROMPT_LOWER" in
+        *troubleshoot*|*" error"*|*"error "*|*debug*|*" fix "*|*issue*|*problem*)
+            add_doc "TROUBLESHOOTING.md" ;;
+    esac
+    case "$PROMPT_LOWER" in
+        *contributing*|*contribute*|*guidelines*|*"pull request"*)
+            add_doc "CONTRIBUTING.md" ;;
+    esac
+}
 
-# =============================================================================
-# END CUSTOMIZATION SECTION
-# =============================================================================
+if [ -f "$DOCS_DIR/GLOSSARY.md" ]; then
+    match_glossary_keywords
+else
+    match_builtin_defaults
+fi
 
 # -----------------------------------------------------------------------------
 # Exit if no matches

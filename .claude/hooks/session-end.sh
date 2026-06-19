@@ -8,7 +8,7 @@
 
 set -e
 
-PROJECT_ROOT="{{PROJECT_ROOT}}"
+PROJECT_ROOT="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 WORKING_DIR="$PROJECT_ROOT/docs/working"
 ARCHIVE_DIR="$HOME/.memex/archives"
 PROJECT_NAME=$(basename "$PROJECT_ROOT")
