@@ -22,6 +22,30 @@ Memex uses Claude Code hooks to:
 
 ## Installation
 
+Memex ships two ways. Both use the same hooks — pick whichever fits your workflow.
+
+### Option A: Plugin (recommended)
+
+Install from a marketplace and let Claude Code manage updates:
+
+```text
+/plugin marketplace add <your-marketplace>
+/plugin install memex
+```
+
+Then scaffold the docs structure in your project once:
+
+```text
+/memex-init
+```
+
+The plugin registers the hooks automatically (no edits to your project's
+`settings.json`), and `/plugin update memex` handles upgrades.
+
+### Option B: Installer script
+
+Copies the hooks into your project's `.claude/` and self-updates on session start:
+
 ```bash
 # Clone the repo
 git clone https://github.com/johnpsasser/memex.git
@@ -54,9 +78,12 @@ Templates use variable substitution during installation:
 
 | Variable | Replaced With |
 |----------|---------------|
-| `{{PROJECT_ROOT}}` | Absolute path to project (used in hooks) |
 | `{{PROJECT_NAME}}` | Directory name of the project |
 | `{{DATE}}` | Installation date (YYYY-MM-DD) |
+
+> Hooks no longer need a `{{PROJECT_ROOT}}` substitution — they resolve the
+> project root at runtime via `$CLAUDE_PROJECT_DIR`, so the same scripts work
+> whether installed by the script or loaded as a plugin.
 
 ### Backup Behavior
 

@@ -15,7 +15,7 @@
 #   - Reports unmapped headers not in GLOSSARY.md
 # =============================================================================
 
-PROJECT_ROOT="{{PROJECT_ROOT}}"
+PROJECT_ROOT="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 DOCS_DIR="$PROJECT_ROOT/docs"
 GLOSSARY_PATH="$DOCS_DIR/GLOSSARY.md"
 

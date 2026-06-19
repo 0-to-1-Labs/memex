@@ -1,6 +1,7 @@
 ---
 name: memex-docs
 description: Use this skill when writing, editing, or creating documentation files (*.md) in the docs/ directory. Provides guidelines for token-efficient documentation that works with the Memex context-enricher system.
+version: 1.0.0
 ---
 
 # Memex Documentation Guidelines

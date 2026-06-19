@@ -15,7 +15,7 @@
 # Configuration
 MAX_FILE_LINES=800
 MAX_SECTION_LINES=150
-PROJECT_ROOT="{{PROJECT_ROOT}}"
+PROJECT_ROOT="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 GLOSSARY_PATH="$PROJECT_ROOT/docs/GLOSSARY.md"
 
 # -----------------------------------------------------------------------------

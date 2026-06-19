@@ -288,21 +288,12 @@ fi
 # -----------------------------------------------------------------------------
 echo "Installing hooks..."
 
-# Copy each hook and update PROJECT_ROOT
-# Escape special characters for sed replacement (& and \ have special meaning)
-PROJECT_ROOT_ESCAPED=$(printf '%s\n' "$PROJECT_ROOT" | sed 's/[&\\/]/\\&/g')
-
+# Hooks resolve the project root at runtime via $CLAUDE_PROJECT_DIR (set by
+# Claude Code), so no path substitution is needed - the same scripts work
+# whether copied by this installer or loaded as a plugin.
 for hook in session-start.sh session-end.sh context-enricher.sh validate-docs.sh scan-docs.sh; do
     if [ -f "$SCRIPT_DIR/.claude/hooks/$hook" ]; then
         cp "$SCRIPT_DIR/.claude/hooks/$hook" "$PROJECT_ROOT/.claude/hooks/$hook"
-
-        # Update PROJECT_ROOT variable in the hook
-        if [[ "$OSTYPE" == "darwin"* ]]; then
-            sed -i '' "s|^PROJECT_ROOT=.*|PROJECT_ROOT=\"$PROJECT_ROOT_ESCAPED\"|" "$PROJECT_ROOT/.claude/hooks/$hook"
-        else
-            sed -i "s|^PROJECT_ROOT=.*|PROJECT_ROOT=\"$PROJECT_ROOT_ESCAPED\"|" "$PROJECT_ROOT/.claude/hooks/$hook"
-        fi
-
         chmod +x "$PROJECT_ROOT/.claude/hooks/$hook"
         echo -e "  ${GREEN}+${NC} $hook"
     fi
@@ -322,24 +313,7 @@ echo "Installing skills..."
 
 SKILLS_INSTALLED=0
 
-# Install from .claude/skills/ (bundled skills)
-if [ -d "$SCRIPT_DIR/.claude/skills" ]; then
-    for skill_dir in "$SCRIPT_DIR/.claude/skills"/*/; do
-        if [ -d "$skill_dir" ]; then
-            skill_name=$(basename "$skill_dir")
-            if [ -d "$PROJECT_ROOT/.claude/skills/$skill_name" ]; then
-                echo -e "  ${YELLOW}~${NC} $skill_name (exists, preserved)"
-            else
-                mkdir -p "$PROJECT_ROOT/.claude/skills/$skill_name"
-                cp -r "$skill_dir"* "$PROJECT_ROOT/.claude/skills/$skill_name/" 2>/dev/null || true
-                echo -e "  ${GREEN}+${NC} $skill_name"
-                SKILLS_INSTALLED=$((SKILLS_INSTALLED + 1))
-            fi
-        fi
-    done
-fi
-
-# Install from skills/ (source skills directory)
+# Install from skills/ (canonical source directory for all bundled skills)
 if [ -d "$SCRIPT_DIR/skills" ]; then
     for skill_dir in "$SCRIPT_DIR/skills"/*/; do
         if [ -d "$skill_dir" ]; then

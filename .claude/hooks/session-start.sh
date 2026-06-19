@@ -8,7 +8,11 @@
 
 set -e
 
-PROJECT_ROOT="{{PROJECT_ROOT}}"
+# Resolve the script's own directory BEFORE changing directories, so telemetry
+# sourcing works regardless of how the hook was invoked (relative or absolute).
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+PROJECT_ROOT="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 cd "$PROJECT_ROOT"
 
 PROJECT_NAME=$(basename "$PROJECT_ROOT")
@@ -16,6 +20,10 @@ PROJECT_NAME=$(basename "$PROJECT_ROOT")
 # -----------------------------------------------------------------------------
 # Memex Auto-Update (check for updates to memex itself)
 # Disable with: export MEMEX_UPDATES_DISABLED=TRUE
+#
+# Installer mode only. When running as a Claude Code plugin, CLAUDE_PLUGIN_ROOT
+# is set and updates are handled by `/plugin update` - so this self-update path
+# is skipped to avoid conflicting with the plugin manager.
 # -----------------------------------------------------------------------------
 # Trusted remote URL patterns for memex auto-update
 # Add your organization's trusted remotes here
@@ -38,7 +46,7 @@ validate_memex_remote() {
 }
 
 MEMEX_SOURCE_FILE="$PROJECT_ROOT/.claude/.memex-source"
-if [ -f "$MEMEX_SOURCE_FILE" ] && [ "${MEMEX_UPDATES_DISABLED:-}" != "TRUE" ]; then
+if [ -z "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "$MEMEX_SOURCE_FILE" ] && [ "${MEMEX_UPDATES_DISABLED:-}" != "TRUE" ]; then
     MEMEX_DIR=$(cat "$MEMEX_SOURCE_FILE")
 
     if [ -d "$MEMEX_DIR/.git" ]; then
@@ -112,10 +120,12 @@ if [ -f "$MEMEX_SOURCE_FILE" ] && [ "${MEMEX_UPDATES_DISABLED:-}" != "TRUE" ]; t
 fi
 
 # -----------------------------------------------------------------------------
-# Auto-pull latest changes (conservative approach)
-# Only pulls on main/master, only if working tree is clean, ff-only
+# Auto-pull latest changes for the user's project (opt-in)
+# Disabled by default - silently pulling someone's repo is surprising,
+# especially for a distributed plugin. Enable with: export MEMEX_AUTO_PULL=TRUE
+# Only pulls on main/master, only if working tree is clean, ff-only.
 # -----------------------------------------------------------------------------
-if [ -d ".git" ]; then
+if [ "${MEMEX_AUTO_PULL:-}" = "TRUE" ] && [ -d ".git" ]; then
     CURRENT_BRANCH=$(git branch --show-current 2>/dev/null)
     if [[ "$CURRENT_BRANCH" == "main" || "$CURRENT_BRANCH" == "master" ]]; then
         # Check if working tree is clean (no staged or unstaged changes)
@@ -131,7 +141,6 @@ fi
 # -----------------------------------------------------------------------------
 # Telemetry Integration (optional - uses Claude Code's OTel config)
 # -----------------------------------------------------------------------------
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [[ -f "$SCRIPT_DIR/telemetry.sh" ]]; then
     source "$SCRIPT_DIR/telemetry.sh"
     telemetry_init "session_start"
