@@ -1,0 +1,23 @@
+{
+  "name": "memex",
+  "version": "1.0.0",
+  "description": "Context-aware documentation system for Claude Code. Auto-injects relevant docs into conversations based on keywords in your prompts, with token-budget awareness and section-level loading.",
+  "author": {
+    "name": "John Sasser",
+    "url": "https://github.com/johnpsasser"
+  },
+  "homepage": "https://github.com/johnpsasser/memex",
+  "repository": "https://github.com/johnpsasser/memex",
+  "license": "MIT",
+  "keywords": [
+    "documentation",
+    "context",
+    "hooks",
+    "rag",
+    "knowledge-base",
+    "productivity"
+  ],
+  "hooks": "./hooks/hooks.json",
+  "commands": "./commands",
+  "skills": "./skills"
+}

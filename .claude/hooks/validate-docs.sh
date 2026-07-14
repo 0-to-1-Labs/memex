@@ -7,7 +7,8 @@
 # Features:
 # - Enforces 800-line file limit (warning)
 # - Warns about 150-line section limit (warning)
-# - Reminds to update GLOSSARY.md when new sections are added
+# - Reminds about OPTIONAL glossary pins ONLY when docs/GLOSSARY.md already exists
+#   (opt-in), and at most once per session. The lexical engine needs no glossary.
 #
 # Does NOT auto-edit - only provides reminders and warnings.
 # =============================================================================
@@ -15,7 +16,7 @@
 # Configuration
 MAX_FILE_LINES=800
 MAX_SECTION_LINES=150
-PROJECT_ROOT="{{PROJECT_ROOT}}"
+PROJECT_ROOT="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 GLOSSARY_PATH="$PROJECT_ROOT/docs/GLOSSARY.md"
 
 # -----------------------------------------------------------------------------
@@ -149,38 +150,65 @@ if [ "$SKIP_LINE_CHECK" -eq 0 ] && [ -f "$FILE_PATH" ]; then
 fi
 
 # =============================================================================
-# Glossary Reminder
+# Optional Glossary Pins Reminder (conditional + rate-limited)
 # =============================================================================
-# Skip reminder for GLOSSARY.md itself
-if [[ "$FILE_PATH" == *"GLOSSARY.md" ]]; then
-    # Telemetry: finalize for glossary edit
-    if type telemetry_finish &>/dev/null; then
-        telemetry_finish "glossary_edit"
-    fi
-    exit 0
-fi
+# The lexical retrieval engine works with zero glossary, so we never nag projects
+# that don't use one. Only remind when the user has opted into pins by creating
+# docs/GLOSSARY.md, and only once per session to avoid training the model to
+# ignore the reminder. Skip the reminder when editing GLOSSARY.md itself.
 
-echo ""
-echo "=============================================="
-echo "  DOCUMENTATION VALIDATION REMINDER"
-echo "=============================================="
-echo ""
-echo "File modified: $REL_PATH"
-echo ""
-echo "If you added new sections or concepts,"
-echo "consider adding relevant entries to GLOSSARY.md."
-echo ""
-echo "Keyword format:"
-echo "  - **keyword** -> \`path/FILE.md#section\` - Description"
-echo ""
-echo "Glossary location: docs/GLOSSARY.md"
-echo "=============================================="
-echo ""
-
-# Telemetry: emit doc edited event and finalize
+# Telemetry: always record the doc edit regardless of whether we show a reminder
 if type emit_event &>/dev/null; then
     emit_event "memex.doc.edited" "Documentation file modified" "{\"file.path\":\"$REL_PATH\"}"
     emit_counter "memex.doc.edits" 1 "{\"file.path\":\"$REL_PATH\"}"
+fi
+
+SHOW_REMINDER=1
+
+# Don't remind on the glossary file itself.
+if [[ "$FILE_PATH" == *"GLOSSARY.md" ]]; then
+    SHOW_REMINDER=0
+fi
+
+# Only remind if the project opted into pins (a glossary already exists).
+if [ "$SHOW_REMINDER" -eq 1 ] && [ ! -f "$GLOSSARY_PATH" ]; then
+    SHOW_REMINDER=0
+fi
+
+# Rate-limit to at most once per session via a marker in the secure user tmp dir.
+if [ "$SHOW_REMINDER" -eq 1 ]; then
+    REMINDER_DIR="${TMPDIR:-/tmp}/memex-$(id -u)"
+    REMINDER_MARKER="$REMINDER_DIR/validate-reminder-shown"
+    if [ -f "$REMINDER_MARKER" ]; then
+        SHOW_REMINDER=0
+    else
+        mkdir -p "$REMINDER_DIR" 2>/dev/null && chmod 700 "$REMINDER_DIR" 2>/dev/null
+        : > "$REMINDER_MARKER" 2>/dev/null
+    fi
+fi
+
+if [ "$SHOW_REMINDER" -eq 1 ]; then
+    echo ""
+    echo "=============================================="
+    echo "  OPTIONAL: GLOSSARY PINS"
+    echo "=============================================="
+    echo ""
+    echo "File modified: $REL_PATH"
+    echo ""
+    echo "This project has a docs/GLOSSARY.md, so you can OPTIONALLY"
+    echo "pin/boost this file for specific terms. Pins are a boost on top"
+    echo "of automatic retrieval -- they are never required."
+    echo ""
+    echo "Optional pin format:"
+    echo "  - **keyword** -> \`path/FILE.md#section\` - Description"
+    echo ""
+    echo "(Shown once per session.)"
+    echo "=============================================="
+    echo ""
+fi
+
+# Telemetry: finalize
+if type telemetry_finish &>/dev/null; then
     telemetry_finish "success"
 fi
 

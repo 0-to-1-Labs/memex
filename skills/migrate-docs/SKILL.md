@@ -1,6 +1,7 @@
 ---
 name: migrate-docs
 description: Migrate existing markdown documentation into the memex docs/ structure. Auto-detects .md files throughout the repo, enables interactive categorization (core/features/working), preserves git history with git mv, and reformats to comply with memex size limits. Use when a user installs memex in a repo with existing documentation.
+version: 1.0.0
 ---
 
 # Migrate Legacy Documentation
@@ -217,7 +218,7 @@ Warnings:
 
 Next steps:
 1. Review migrated files
-2. Update context-enricher.sh keywords if needed
+2. Add keyword entries to docs/GLOSSARY.md so the context-enricher can auto-load them
 3. Commit: git commit -m "Migrate documentation to memex structure"
 ```
 
@@ -255,6 +256,5 @@ API.md (892 lines) splits into:
 
 Remind user to:
 1. Review migrated files for accuracy
-2. Add keywords to `context-enricher.sh` if using keyword-based loading
-3. Run `./scan-docs.sh --check` to find any unmapped sections
-4. Commit changes with descriptive message
+2. Optionally add keyword pins to `docs/GLOSSARY.md` (`- **keyword** -> \`path\``); the context-enricher boosts these, but retrieval also works without them
+3. Commit changes with descriptive message

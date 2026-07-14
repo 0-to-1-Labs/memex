@@ -32,10 +32,11 @@
 #   - Migrates to docs/core/ or docs/features/ based on filename
 #   - docs/archive/ is excluded from context loading
 #
-# Auto-Update:
-#   - Stores memex source path in .claude/.memex-source
-#   - session-start.sh checks for updates and auto-installs
-#   - Disable with: export MEMEX_UPDATES_DISABLED=TRUE
+# Updates:
+#   - Plugin mode: run `/plugin update` to pull the latest Memex.
+#   - Installer mode: re-run this script (./install.sh -f <project>) to update.
+#   - No automatic git fetch/pull or remote code execution happens on session
+#     start; updates are always an explicit, user-initiated action.
 # =============================================================================
 
 set -e
@@ -177,11 +178,6 @@ EOF
 fi
 
 # -----------------------------------------------------------------------------
-# Store memex source path for auto-updates
-# -----------------------------------------------------------------------------
-echo "$SCRIPT_DIR" > "$PROJECT_ROOT/.claude/.memex-source"
-
-# -----------------------------------------------------------------------------
 # Documentation Migration (unless --no-migration)
 # -----------------------------------------------------------------------------
 if [ "$NO_MIGRATION" -eq 0 ]; then
@@ -288,21 +284,12 @@ fi
 # -----------------------------------------------------------------------------
 echo "Installing hooks..."
 
-# Copy each hook and update PROJECT_ROOT
-# Escape special characters for sed replacement (& and \ have special meaning)
-PROJECT_ROOT_ESCAPED=$(printf '%s\n' "$PROJECT_ROOT" | sed 's/[&\\/]/\\&/g')
-
-for hook in session-start.sh session-end.sh context-enricher.sh validate-docs.sh scan-docs.sh; do
+# Hooks resolve the project root at runtime via $CLAUDE_PROJECT_DIR (set by
+# Claude Code), so no path substitution is needed - the same scripts work
+# whether copied by this installer or loaded as a plugin.
+for hook in session-start.sh session-end.sh context-enricher.sh validate-docs.sh; do
     if [ -f "$SCRIPT_DIR/.claude/hooks/$hook" ]; then
         cp "$SCRIPT_DIR/.claude/hooks/$hook" "$PROJECT_ROOT/.claude/hooks/$hook"
-
-        # Update PROJECT_ROOT variable in the hook
-        if [[ "$OSTYPE" == "darwin"* ]]; then
-            sed -i '' "s|^PROJECT_ROOT=.*|PROJECT_ROOT=\"$PROJECT_ROOT_ESCAPED\"|" "$PROJECT_ROOT/.claude/hooks/$hook"
-        else
-            sed -i "s|^PROJECT_ROOT=.*|PROJECT_ROOT=\"$PROJECT_ROOT_ESCAPED\"|" "$PROJECT_ROOT/.claude/hooks/$hook"
-        fi
-
         chmod +x "$PROJECT_ROOT/.claude/hooks/$hook"
         echo -e "  ${GREEN}+${NC} $hook"
     fi
@@ -322,24 +309,7 @@ echo "Installing skills..."
 
 SKILLS_INSTALLED=0
 
-# Install from .claude/skills/ (bundled skills)
-if [ -d "$SCRIPT_DIR/.claude/skills" ]; then
-    for skill_dir in "$SCRIPT_DIR/.claude/skills"/*/; do
-        if [ -d "$skill_dir" ]; then
-            skill_name=$(basename "$skill_dir")
-            if [ -d "$PROJECT_ROOT/.claude/skills/$skill_name" ]; then
-                echo -e "  ${YELLOW}~${NC} $skill_name (exists, preserved)"
-            else
-                mkdir -p "$PROJECT_ROOT/.claude/skills/$skill_name"
-                cp -r "$skill_dir"* "$PROJECT_ROOT/.claude/skills/$skill_name/" 2>/dev/null || true
-                echo -e "  ${GREEN}+${NC} $skill_name"
-                SKILLS_INSTALLED=$((SKILLS_INSTALLED + 1))
-            fi
-        fi
-    done
-fi
-
-# Install from skills/ (source skills directory)
+# Install from skills/ (canonical source directory for all bundled skills)
 if [ -d "$SCRIPT_DIR/skills" ]; then
     for skill_dir in "$SCRIPT_DIR/skills"/*/; do
         if [ -d "$skill_dir" ]; then
@@ -420,9 +390,34 @@ if [ -f "$SETTINGS_FILE" ] && command -v jq &> /dev/null; then
     # Merge with existing settings (deep merge hooks)
     EXISTING=$(cat "$SETTINGS_FILE")
 
-    # Use jq to merge - memex hooks take precedence
+    # Merge memex hooks into existing settings WITHOUT clobbering other hooks.
+    #
+    # `. * $memex` deep-merges but *replaces* same-event hook arrays, wiping out
+    # any pre-existing hooks the user has under SessionStart/PostToolUse/etc.
+    # Instead, for each event in $memex.hooks we APPEND memex's hook groups to
+    # the user's existing array for that event, then de-duplicate by the set of
+    # command strings each group contains so re-running install is idempotent
+    # (memex's own entries are not duplicated). All non-hook settings, and hooks
+    # for events memex does not touch, are left exactly as-is.
     MERGED=$(echo "$EXISTING" | jq --argjson memex "$MEMEX_HOOKS" '
-        . * $memex
+        # commands(group): sorted list of command strings within a hook group,
+        # used as the de-dup identity for that group.
+        def commands(group): [group.hooks[]? | .command] | sort;
+
+        . as $base
+        | reduce ($memex.hooks | to_entries[]) as $evt (
+            $base;
+            .hooks[$evt.key] = (
+                ((.hooks // {})[$evt.key] // []) as $existing
+                | reduce $evt.value[] as $grp (
+                    $existing;
+                    if any(.[]?; commands(.) == commands($grp))
+                    then .
+                    else . + [$grp]
+                    end
+                )
+            )
+        )
     ' 2>/dev/null)
 
     if [ -n "$MERGED" ] && [ "$MERGED" != "null" ]; then
@@ -540,9 +535,9 @@ echo "  Claude config:  $PROJECT_ROOT/.claude/"
 echo "  Documentation:  $WORKTREE/docs/"
 echo ""
 echo "Next steps:"
-echo "  1. Review docs/GLOSSARY.md.old if it was backed up"
-echo "  2. Customize docs/GLOSSARY.md with your keywords"
-echo "  3. Add documentation to docs/core/"
+echo "  1. Add documentation to docs/core/ and docs/features/"
+echo "  2. (Optional) Add pin/boost hints to docs/GLOSSARY.md"
+echo "  3. Review docs/GLOSSARY.md.old if it was backed up"
 echo ""
 echo -e "Docs: ${BLUE}https://github.com/johnpsasser/memex${NC}"
 echo ""

@@ -11,3 +11,10 @@
 
 # Memex working directory
 .memex/
+
+# Dev-only hook wiring (plugin consumers get hooks/hooks.json instead)
+.claude/settings.json
+
+# Working review/planning docs (not part of the plugin)
+REVIEW-*.md
+IMPLEMENTATION-PLAN-*.md

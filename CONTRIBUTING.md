@@ -91,7 +91,7 @@ git init
 
 ```bash
 # Test context-enricher (UserPromptSubmit hook)
-echo '{"user_prompt": "tell me about the database schema"}' | .claude/hooks/context-enricher.sh
+echo '{"prompt": "tell me about the database schema", "session_id": "test"}' | .claude/hooks/context-enricher.sh
 
 # Test session-start (SessionStart hook)
 .claude/hooks/session-start.sh

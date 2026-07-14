@@ -22,6 +22,30 @@ Memex uses Claude Code hooks to:
 
 ## Installation
 
+Memex ships two ways. Both use the same hooks — pick whichever fits your workflow.
+
+### Option A: Plugin (recommended)
+
+Install from a marketplace and let Claude Code manage updates:
+
+```text
+/plugin marketplace add <your-marketplace>
+/plugin install memex
+```
+
+Then scaffold the docs structure in your project once:
+
+```text
+/memex-init
+```
+
+The plugin registers the hooks automatically (no edits to your project's
+`settings.json`), and `/plugin update memex` handles upgrades.
+
+### Option B: Installer script
+
+Copies the hooks into your project's `.claude/` and self-updates on session start:
+
 ```bash
 # Clone the repo
 git clone https://github.com/johnpsasser/memex.git
@@ -54,9 +78,12 @@ Templates use variable substitution during installation:
 
 | Variable | Replaced With |
 |----------|---------------|
-| `{{PROJECT_ROOT}}` | Absolute path to project (used in hooks) |
 | `{{PROJECT_NAME}}` | Directory name of the project |
 | `{{DATE}}` | Installation date (YYYY-MM-DD) |
+
+> Hooks no longer need a `{{PROJECT_ROOT}}` substitution — they resolve the
+> project root at runtime via `$CLAUDE_PROJECT_DIR`, so the same scripts work
+> whether installed by the script or loaded as a plugin.
 
 ### Backup Behavior
 
@@ -78,42 +105,29 @@ The system has four hooks that run at different points:
 
 | Hook | When | What It Does |
 |------|------|--------------|
-| `session-start.sh` | Session begins | Auto-pulls main branch (if clean), shows git info, lists available docs |
-| `context-enricher.sh` | You submit a prompt | Scans for keywords, injects matching docs |
-| `validate-docs.sh` | After editing `docs/*.md` | Reminds to update GLOSSARY.md |
-| `session-end.sh` | Session ends | Archives working documents to `~/.memex/archives/` |
+| `session-start.sh` | Session begins | Shows git info, lists available docs (read-only; never pulls or auto-updates) |
+| `context-enricher.sh` | You submit a prompt | Extracts search terms, lexically searches your docs, injects the densest matching sections |
+| `validate-docs.sh` | After editing `docs/*.md` | Reminds to update GLOSSARY.md (advisory, never blocks) |
+| `session-end.sh` | Session ends | Archives `docs/working/` — opt-in via `MEMEX_ARCHIVE_WORKING=TRUE` |
 
-The context-enricher hook is the key piece. It reads your prompt, looks for keywords, and wraps matching documentation in XML tags that get injected into the conversation:
+The context-enricher hook is the key piece. It extracts terms from your prompt, searches your docs with ripgrep (grep fallback), ranks the densest matches, and injects the relevant sections as `additionalContext`:
 
-```xml
-<auto-loaded-documentation>
-<doc path="docs/core/DATABASE.md">
-...documentation content...
-</doc>
-</auto-loaded-documentation>
+```
+<auto-context>
+<!-- Memex auto-retrieved the densest matching excerpts from this repo (read-only, lexical). -->
+<!-- docs/core/DATABASE.md : lines 1-24 -->
+...section content...
+</auto-context>
 ```
 
-## Customizing Keywords
+Retrieval is automatic and needs no configuration — no keyword map to maintain. It ranks by lexical relevance and only injects the tightest matching section of each doc, under a token budget.
 
-Edit `.claude/hooks/context-enricher.sh` to add your own keyword patterns:
+## Customizing retrieval (optional)
 
-```bash
-# Full file loading
-case "$PROMPT_LOWER" in
-    *authentication*|*login*|*oauth*|*jwt*)
-        add_doc "features/AUTH.md"
-        ;;
-esac
+You don't have to configure anything. Two optional levers:
 
-# Section-level loading (more efficient!)
-case "$PROMPT_LOWER" in
-    *"oauth flow"*|*"oauth setup"*)
-        add_doc "features/AUTH.md#oauth-flow"  # Only loads that section
-        ;;
-esac
-```
-
-The pattern matching is simple: if any of the keywords appear in the prompt (case-insensitive), the doc gets loaded. With section anchors, only the relevant section is extracted.
+- **Glossary pins** — add `docs/GLOSSARY.md` with `- **keyword** -> \`path\`` bullets. When a whole word from a bullet appears in your prompt, that doc is boosted into the candidate set. Purely additive on top of the automatic lexical search.
+- **Budget & scope** — `MAX_TOTAL_TOKENS` (default 10000) caps injected context; `MEMEX_SCAN_TOKEN_CAP` (default 200) bounds how much of a long prompt is scanned. `docs/archive/`, `.claude/`, and `GLOSSARY.md` are never injected.
 
 ## Documentation Structure
 
@@ -133,44 +147,17 @@ your-project/
 │   ├── archive/           # Preserved original docs (excluded from loading)
 │   └── working/           # Temp files (gitignored)
 └── .claude/
-    ├── settings.json      # Hook configuration
-    ├── .memex-source      # Path to memex repo (for auto-updates)
-    └── hooks/             # Hook scripts
+    └── hooks/             # Hook scripts (installer mode)
 ```
 
-The idea is that GLOSSARY.md is cheap to load (just keyword mappings), and the full docs only get loaded when relevant.
+GLOSSARY.md is optional: it lets you pin specific docs to keywords, but retrieval works without it — the engine searches your docs directly and injects only the relevant sections.
 
-## Auto-Updates
+## Updating
 
-Memex automatically checks for updates when a Claude Code session starts. If updates are available, they're pulled and installed automatically.
+`session-start.sh` is read-only: it shows git status and available docs and **never** fetches, pulls, or executes remote code on session start. To update Memex itself:
 
-### How It Works
-
-1. On install, memex stores its source path in `.claude/.memex-source`
-2. On session start, `session-start.sh` checks if the memex repo has new commits
-3. If updates exist, memex pulls and re-runs the installer
-
-### Project Auto-Pull
-
-In addition to memex updates, `session-start.sh` also pulls the latest changes for your project:
-
-- Only runs on `main` or `master` branches
-- Only runs if the working tree is clean (no staged or unstaged changes)
-- Uses `--ff-only` to fail safely if branches have diverged
-
-This keeps your local main branch current without disrupting work on feature branches.
-
-### Disabling Auto-Updates
-
-Set the environment variable to disable memex auto-updates:
-
-```bash
-export MEMEX_UPDATES_DISABLED=TRUE
-```
-
-Add to your shell profile (`.bashrc`, `.zshrc`) to disable permanently.
-
-**Note:** This only disables memex updates. Project auto-pull is a separate feature that always runs when conditions are met.
+- **Plugin install:** `/plugin update memex`
+- **Installer mode:** re-run `./install.sh /path/to/project`
 
 ## Documentation Migration
 
@@ -242,7 +229,6 @@ memex/
 │       ├── session-end.sh        # Archives working docs
 │       ├── context-enricher.sh   # Auto-injects docs (the main hook)
 │       ├── validate-docs.sh      # Line limit warnings + glossary reminders
-│       ├── scan-docs.sh          # Auto-glossary generator utility
 │       └── telemetry.sh          # OpenTelemetry export helper
 ├── skills/
 │   ├── memex-docs/
@@ -255,21 +241,6 @@ memex/
 │   └── CONTRIBUTING.md.template  # Contribution guide template
 └── examples/
     └── semantic-map.example.md   # Example keyword mappings
-```
-
-### Utility: scan-docs.sh
-
-The `scan-docs.sh` utility helps generate glossary entries:
-
-```bash
-# Scan all docs and suggest keywords
-./scan-docs.sh
-
-# Scan a specific file
-./scan-docs.sh docs/core/API.md
-
-# Check for unmapped documentation
-./scan-docs.sh --check
 ```
 
 ### Skill: memex-docs
@@ -427,7 +398,9 @@ Memex respects these environment variables:
 
 | Variable | Purpose |
 |----------|---------|
-| `MEMEX_UPDATES_DISABLED` | Set to `TRUE` to disable auto-updates |
+| `MAX_TOTAL_TOKENS` | Token budget for injected context (default `10000`) |
+| `MEMEX_SCAN_TOKEN_CAP` | Max prompt tokens inspected during term extraction (default `200`) |
+| `MEMEX_ARCHIVE_WORKING` | Set to `TRUE` to archive+clear `docs/working/` on session end |
 | `CLAUDE_CODE_ENABLE_TELEMETRY` | Enable telemetry (must be `1`) |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | Collector endpoint |
 | `OTEL_EXPORTER_OTLP_HEADERS` | Auth headers (format: `Key=Value,Key2=Value2`) |
