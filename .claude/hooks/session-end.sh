@@ -3,10 +3,16 @@
 # SessionEnd Hook - Memex Documentation System
 # =============================================================================
 # Triggered when a Claude Code session ends.
-# Archives working documents and cleans up the working directory.
+#
+# Archiving is OPT-IN and default OFF. Enable it explicitly with:
+#     export MEMEX_ARCHIVE_WORKING=TRUE
+# When enabled, this tars docs/working/ into ~/.memex/archives and then deletes
+# the working files (keeping the last 20 archives). When NOT enabled, this hook
+# is non-destructive: it touches no files and simply records a telemetry signal.
 # =============================================================================
 
-set -e
+# No blanket `set -e`: a failure mid-run must never abort archiving in a way
+# that loses data. The destructive delete is gated on a confirmed-successful tar.
 
 PROJECT_ROOT="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 WORKING_DIR="$PROJECT_ROOT/docs/working"
@@ -20,6 +26,17 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [[ -f "$SCRIPT_DIR/telemetry.sh" ]]; then
     source "$SCRIPT_DIR/telemetry.sh"
     telemetry_init "session_end"
+fi
+
+# -----------------------------------------------------------------------------
+# Opt-in gate: do nothing destructive unless MEMEX_ARCHIVE_WORKING=TRUE
+# -----------------------------------------------------------------------------
+if [ "${MEMEX_ARCHIVE_WORKING:-}" != "TRUE" ]; then
+    if type emit_session_end &>/dev/null; then
+        emit_session_end "$PROJECT_NAME" 0
+        telemetry_finish "archive_disabled"
+    fi
+    exit 0
 fi
 
 # -----------------------------------------------------------------------------
@@ -71,29 +88,38 @@ echo "Archiving working documents..."
 echo "  Source: $WORKING_DIR"
 echo "  Archive: $ARCHIVE_FILE"
 
-# Create tar archive (excluding .git* files)
-# Capture exit code immediately after tar command
-cd "$WORKING_DIR"
-TAR_EXIT_CODE=0
-tar -czf "$ARCHIVE_FILE" --exclude='.*' . 2>/dev/null || TAR_EXIT_CODE=$?
+# Archive the non-hidden working files, then delete ONLY if the archive is
+# verified to contain them.
+#
+# Do NOT use `tar -czf "$ARCHIVE_FILE" --exclude='.*' .`: on bsdtar (macOS
+# default) the `.*` pattern matches the `.` path argument itself, so tar
+# archives NOTHING and still exits 0 — which, combined with the delete below,
+# silently destroys every working doc. Instead we archive an explicit file
+# list and refuse to delete unless the archive holds at least as many files
+# as we are about to remove.
+FILE_COUNT=$(find "$WORKING_DIR" -type f ! -path '*/.*' 2>/dev/null | wc -l | tr -d ' ')
 
-if [ "$TAR_EXIT_CODE" -eq 0 ]; then
-    echo "  Archive created successfully."
-
-    # Count archived files
-    FILE_COUNT=$(ls -1 "$WORKING_DIR" 2>/dev/null | grep -v "^\." | wc -l | tr -d ' ')
-    echo "  Files archived: $FILE_COUNT"
-
-    # -----------------------------------------------------------------------------
-    # Clean up working directory (keep .git* files)
-    # -----------------------------------------------------------------------------
-    echo "Cleaning up working directory..."
-    find "$WORKING_DIR" -type f ! -name ".*" -delete 2>/dev/null
-    echo "  Working directory cleaned."
+if [ "${FILE_COUNT:-0}" -eq 0 ]; then
+    echo "  No working documents to archive."
 else
-    echo "  Warning: Archive creation failed (exit code: $TAR_EXIT_CODE). Working docs preserved."
-    # Remove potentially incomplete archive
-    rm -f "$ARCHIVE_FILE" 2>/dev/null || true
+    TAR_EXIT_CODE=0
+    ( cd "$WORKING_DIR" && find . -type f ! -path '*/.*' -print0 | tar -czf "$ARCHIVE_FILE" --null -T - ) 2>/dev/null || TAR_EXIT_CODE=$?
+
+    # Verify the archive actually contains the files BEFORE deleting anything.
+    ARCHIVED_COUNT=0
+    if [ "$TAR_EXIT_CODE" -eq 0 ] && [ -s "$ARCHIVE_FILE" ]; then
+        ARCHIVED_COUNT=$(tar -tzf "$ARCHIVE_FILE" 2>/dev/null | wc -l | tr -d ' ')
+    fi
+
+    if [ "$TAR_EXIT_CODE" -eq 0 ] && [ "${ARCHIVED_COUNT:-0}" -ge "$FILE_COUNT" ] && [ "${ARCHIVED_COUNT:-0}" -gt 0 ]; then
+        echo "  Archive created successfully ($ARCHIVED_COUNT file(s))."
+        echo "Cleaning up working directory..."
+        find "$WORKING_DIR" -type f ! -path '*/.*' -delete 2>/dev/null
+        echo "  Working directory cleaned."
+    else
+        echo "  Warning: archive verification failed (tar=$TAR_EXIT_CODE, archived=${ARCHIVED_COUNT:-0}, expected=$FILE_COUNT). Working docs preserved." >&2
+        rm -f "$ARCHIVE_FILE" 2>/dev/null || true
+    fi
 fi
 
 # -----------------------------------------------------------------------------

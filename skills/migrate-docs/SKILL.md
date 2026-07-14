@@ -256,6 +256,5 @@ API.md (892 lines) splits into:
 
 Remind user to:
 1. Review migrated files for accuracy
-2. Add keyword entries to `docs/GLOSSARY.md` (the context-enricher reads these at runtime)
-3. Run `.claude/hooks/scan-docs.sh --check` to find any unmapped sections
-4. Commit changes with descriptive message
+2. Optionally add keyword pins to `docs/GLOSSARY.md` (`- **keyword** -> \`path\``); the context-enricher boosts these, but retrieval also works without them
+3. Commit changes with descriptive message

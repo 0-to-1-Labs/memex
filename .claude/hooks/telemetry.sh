@@ -22,7 +22,7 @@
 # Configuration
 # -----------------------------------------------------------------------------
 MEMEX_SERVICE_NAME="memex"
-MEMEX_SERVICE_VERSION="1.0.0"
+MEMEX_SERVICE_VERSION="2.0.0"
 
 # Telemetry state
 _TELEMETRY_ENABLED=0
@@ -406,10 +406,28 @@ emit_cache_miss() {
 }
 
 # Emit keyword match
+# DEPRECATED: legacy glossary/keyword engine signal; use emit_term_match (lexical engine) instead.
 emit_keyword_match() {
     local keyword="$1"
     local doc_name="$2"
     emit_counter "memex.keyword.matched" 1 "{\"keyword\":\"$keyword\",\"doc.name\":\"$doc_name\"}"
+}
+
+# Emit term-match (a search term that drove an injection in the lexical engine)
+# The term may contain spaces (quoted phrases), quotes, or backslashes, so build the
+# attributes JSON with jq when available to escape it safely; fall back to inline form.
+emit_term_match() {
+    local term="$1"
+    local file_name="${2:-}"
+    local attributes
+    if command -v jq &> /dev/null; then
+        attributes=$(jq -nc --arg term "$term" --arg file_name "$file_name" \
+            '{"term": $term, "file.name": $file_name}' 2>/dev/null) \
+            || attributes="{\"term\":\"$term\",\"file.name\":\"$file_name\"}"
+    else
+        attributes="{\"term\":\"$term\",\"file.name\":\"$file_name\"}"
+    fi
+    emit_counter "memex.term.matched" 1 "$attributes"
 }
 
 # Emit no-match prompt

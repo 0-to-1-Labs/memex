@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Memex is a context-aware documentation system for Claude Code. It uses Claude Code hooks to automatically inject relevant documentation into conversations based on keywords in user prompts.
+Memex is a context-aware documentation system for Claude Code. A `UserPromptSubmit` hook extracts search terms from the user's prompt, runs a lexical (ripgrep/grep) search over the project's docs, ranks the matches, and injects the most relevant sections back into the conversation under a token budget. An optional `docs/GLOSSARY.md` can pin specific docs to keywords, but the engine works with no glossary at all.
 
 ## Development
 
@@ -22,8 +22,8 @@ This is a bash-only project. No build step required.
 After installing to a project, test hooks manually:
 
 ```bash
-# Test context-enricher (UserPromptSubmit hook)
-echo '{"user_prompt": "tell me about the database schema"}' | .claude/hooks/context-enricher.sh
+# Test context-enricher (UserPromptSubmit hook) — CC sends `.prompt`
+echo '{"prompt": "tell me about the database schema", "session_id": "test"}' | .claude/hooks/context-enricher.sh
 
 # Test session-start (SessionStart hook)
 .claude/hooks/session-start.sh
@@ -38,12 +38,11 @@ echo '{"tool_name": "Write", "tool_input": {"file_path": "docs/test.md"}}' | .cl
 memex/
 ├── install.sh              # Installer (entry point)
 ├── .claude/
-│   ├── hooks/              # Hook scripts (copied to target projects)
-│   │   ├── context-enricher.sh   # Core: keyword matching + doc injection
+│   ├── hooks/              # Hook scripts (also run as ${CLAUDE_PLUGIN_ROOT}/.claude/hooks)
+│   │   ├── context-enricher.sh   # Core: lexical retrieval + ranked doc injection
 │   │   ├── session-start.sh      # Shows git status, available docs
-│   │   ├── session-end.sh        # Archives working documents
+│   │   ├── session-end.sh        # Archives working documents (opt-in)
 │   │   ├── validate-docs.sh      # Size limits, glossary reminders
-│   │   ├── scan-docs.sh          # Auto-glossary generator utility
 │   │   └── telemetry.sh          # OpenTelemetry helper (sourced by others)
 │   └── skills/             # Skills (copied to target projects)
 ├── skills/                 # Skill source files
@@ -57,20 +56,22 @@ memex/
 
 ### Hook Flow
 
-1. **SessionStart** → `session-start.sh`: Checks for memex updates, auto-pulls main branch, shows git status and available docs
-2. **UserPromptSubmit** → `context-enricher.sh`: Scans prompt for keywords, injects matching docs with token budget (excludes `docs/archive/`)
-3. **PostToolUse** → `validate-docs.sh`: Warns when doc edits exceed size limits
-4. **SessionEnd** → `session-end.sh`: Archives `docs/working/` files
+1. **SessionStart** → `session-start.sh`: Read-only banner — shows git status and available docs. Does not auto-update or `git pull` (use `/plugin update` or `install.sh`).
+2. **UserPromptSubmit** → `context-enricher.sh`: Extracts terms from the prompt, lexically searches the project, ranks and injects the densest matching sections under a token budget (excludes `docs/archive/`, `.claude/`, and `GLOSSARY.md` itself).
+3. **PostToolUse** → `validate-docs.sh`: Warns (advisory only, never blocks) when doc edits exceed size limits.
+4. **SessionEnd** → `session-end.sh`: Archives `docs/working/` files — opt-in via `MEMEX_ARCHIVE_WORKING=TRUE`.
 
 ### context-enricher.sh Internals
 
 The core logic lives in `context-enricher.sh`:
-- Keyword patterns defined via bash `case` statements (lines 178-253, customization section)
-- Section-level extraction via `extract_section()` function (lines 274-330)
-- Token budget tracking with `~10k` token limit
-- Session deduplication via secure temp directory with PPID-based session tokens
+- **Term extraction**: identifier-shaped tokens (camelCase / snake_case / dotted) kept whole, plus stopword-filtered plain words; deduped, longest-first, capped at `MAX_TERMS` (scan bounded by `MEMEX_SCAN_TOKEN_CAP`, default 200).
+- **Search**: one `--fixed-strings --ignore-case` pass per term via `rg` (falls back to `grep -rIn`), from `PROJECT_ROOT`, honoring exclude globs.
+- **Ranking**: densest-window over match line numbers per file; section-level extraction via `extract_md_section()` (fence-aware) with an `extract_line_window()` fallback.
+- **Budget**: `MAX_TOTAL_TOKENS` (default 10k) cap; per-section cap `MAX_SECTION_LINES`.
+- **Dedup**: per-session `injected` ledger under a secured temp dir keyed on `session_id`.
+- **Output**: JSON `additionalContext` (jq-escaped), with a raw-stdout fallback.
 
-To add new keyword mappings, edit the "KEYWORD-TO-DOCUMENTATION MATCHING" section.
+Optional keyword pins live in `docs/GLOSSARY.md` as `- **keyword** -> \`path\`` bullets; a whole-word prompt match boosts that path into the candidate set.
 
 ## Key Constraints
 
@@ -84,7 +85,12 @@ To add new keyword mappings, edit the "KEYWORD-TO-DOCUMENTATION MATCHING" sectio
 
 | Variable | Purpose |
 |----------|---------|
-| `MEMEX_UPDATES_DISABLED=TRUE` | Disable auto-updates on session start |
+| `MAX_TOTAL_TOKENS` | Token budget for injected context (default 10000) |
+| `MEMEX_SCAN_TOKEN_CAP` | Max prompt tokens inspected during term extraction (default 200) |
+| `MEMEX_ARCHIVE_WORKING=TRUE` | Opt in to archiving+clearing `docs/working/` on SessionEnd |
+| `CLAUDE_CODE_ENABLE_TELEMETRY=1` + `OTEL_EXPORTER_OTLP_ENDPOINT` | Enable OpenTelemetry emission to your own collector (no-op otherwise) |
+
+`session-start.sh` is read-only and never pulls/updates; update via `/plugin update` or `install.sh`.
 
 ## File Naming Conventions
 
