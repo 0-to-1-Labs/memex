@@ -29,8 +29,8 @@ Memex ships two ways. Both use the same hooks — pick whichever fits your workf
 Install from a marketplace and let Claude Code manage updates:
 
 ```text
-/plugin marketplace add <your-marketplace>
-/plugin install memex
+/plugin marketplace add 0-to-1-Labs/claude-marketplace
+/plugin install memex@0-to-1-labs
 ```
 
 Then scaffold the docs structure in your project once:
