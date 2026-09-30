@@ -5,7 +5,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/.claude/hooks/session-start.sh\""
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/.claude/hooks/session-start.sh\"",
+            "timeout": 10
           }
         ]
       }
@@ -15,7 +16,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/.claude/hooks/session-end.sh\""
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/.claude/hooks/session-end.sh\"",
+            "timeout": 10
           }
         ]
       }
@@ -25,18 +27,20 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/.claude/hooks/context-enricher.sh\""
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/.claude/hooks/context-enricher.sh\"",
+            "timeout": 10
           }
         ]
       }
     ],
     "PostToolUse": [
       {
-        "matcher": "Write|Edit",
+        "matcher": "^(Write|Edit)$",
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/.claude/hooks/validate-docs.sh\""
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/.claude/hooks/validate-docs.sh\"",
+            "timeout": 10
           }
         ]
       }
