@@ -202,9 +202,13 @@ if [ "$NO_MIGRATION" -eq 0 ]; then
             continue
         fi
 
-        # Skip node_modules, .git, vendor directories
-        case "$md_file" in
-            *"/node_modules/"*|*"/.git/"*|*"/vendor/"*) continue ;;
+        # Skip hidden directories (.git, .claude, .github, .venv, ...) and
+        # dependency/build output. Without this, a second run would ingest the
+        # skills this installer copied into .claude/ and GitHub templates.
+        case "${md_file#"$WORKTREE"/}" in
+            .*|*/.*) continue ;;
+            node_modules/*|*/node_modules/*|vendor/*|*/vendor/*) continue ;;
+            venv/*|*/venv/*|build/*|*/build/*|dist/*|*/dist/*|target/*|*/target/*) continue ;;
         esac
 
         # Calculate content hash (MD5)
@@ -370,7 +374,7 @@ MEMEX_HOOKS=$(cat << EOF
     ],
     "PostToolUse": [
       {
-        "matcher": "Write|Edit",
+        "matcher": "^(Write|Edit)$",
         "hooks": [
           {
             "type": "command",
@@ -385,9 +389,17 @@ EOF
 )
 
 SETTINGS_FILE="$PROJECT_ROOT/.claude/settings.json"
+SETTINGS_SKIPPED=0
 
-if [ -f "$SETTINGS_FILE" ] && command -v jq &> /dev/null; then
-    # Merge with existing settings (deep merge hooks)
+if [ -f "$SETTINGS_FILE" ] && ! command -v jq &> /dev/null; then
+    # Never overwrite an existing settings file without being able to merge it.
+    echo -e "  ${YELLOW}!${NC} settings.json exists and jq is not installed: not modified."
+    echo "    Install jq and re-run, or add the memex hooks by hand."
+    SETTINGS_SKIPPED=1
+elif [ -f "$SETTINGS_FILE" ]; then
+    # Merge with existing settings (deep merge hooks). Back up first.
+    SETTINGS_BACKUP="$SETTINGS_FILE.bak.$(date +%Y%m%d%H%M%S)"
+    cp "$SETTINGS_FILE" "$SETTINGS_BACKUP"
     EXISTING=$(cat "$SETTINGS_FILE")
 
     # Merge memex hooks into existing settings WITHOUT clobbering other hooks.
@@ -399,6 +411,8 @@ if [ -f "$SETTINGS_FILE" ] && command -v jq &> /dev/null; then
     # command strings each group contains so re-running install is idempotent
     # (memex's own entries are not duplicated). All non-hook settings, and hooks
     # for events memex does not touch, are left exactly as-is.
+    # `|| true` keeps `set -e` from aborting the install when the file is not
+    # strict JSON (for example, it contains comments): we report and move on.
     MERGED=$(echo "$EXISTING" | jq --argjson memex "$MEMEX_HOOKS" '
         # commands(group): sorted list of command strings within a hook group,
         # used as the de-dup identity for that group.
@@ -418,24 +432,22 @@ if [ -f "$SETTINGS_FILE" ] && command -v jq &> /dev/null; then
                 )
             )
         )
-    ' 2>/dev/null)
+    ' 2>/dev/null) || true
 
-    if [ -n "$MERGED" ] && [ "$MERGED" != "null" ]; then
+    if [ -n "$MERGED" ] && [ "$MERGED" != "null" ] && printf '%s' "$MERGED" | jq -e '.hooks' >/dev/null 2>&1; then
         echo "$MERGED" > "$SETTINGS_FILE"
-        echo -e "  ${GREEN}*${NC} settings.json (merged)"
+        echo -e "  ${GREEN}*${NC} settings.json (merged; backup: $(basename "$SETTINGS_BACKUP"))"
     else
-        # Fallback: overwrite if merge fails
-        echo "$MEMEX_HOOKS" > "$SETTINGS_FILE"
-        echo -e "  ${YELLOW}!${NC} settings.json (merge failed, overwritten)"
+        # Never replace the user's settings with only the memex hooks.
+        rm -f "$SETTINGS_BACKUP"
+        echo -e "  ${YELLOW}!${NC} settings.json is not valid JSON: not modified."
+        echo "    Fix the file (or remove comments) and re-run, or add the memex hooks by hand."
+        SETTINGS_SKIPPED=1
     fi
 else
-    # No existing file or no jq - create new
+    # No existing file - create new
     echo "$MEMEX_HOOKS" > "$SETTINGS_FILE"
-    if [ -f "$SETTINGS_FILE.bak" ] 2>/dev/null; then
-        echo -e "  ${GREEN}+${NC} settings.json (created, old backed up)"
-    else
-        echo -e "  ${GREEN}+${NC} settings.json"
-    fi
+    echo -e "  ${GREEN}+${NC} settings.json"
 fi
 
 # -----------------------------------------------------------------------------
@@ -534,10 +546,16 @@ echo "Installed components:"
 echo "  Claude config:  $PROJECT_ROOT/.claude/"
 echo "  Documentation:  $WORKTREE/docs/"
 echo ""
+if [ "$SETTINGS_SKIPPED" -eq 1 ]; then
+    echo -e "${YELLOW}Skipped:${NC}"
+    echo "  .claude/settings.json was NOT modified (see above). The hooks are"
+    echo "  installed under .claude/hooks/ but are not registered until you add them."
+    echo ""
+fi
 echo "Next steps:"
 echo "  1. Add documentation to docs/core/ and docs/features/"
 echo "  2. (Optional) Add pin/boost hints to docs/GLOSSARY.md"
 echo "  3. Review docs/GLOSSARY.md.old if it was backed up"
 echo ""
-echo -e "Docs: ${BLUE}https://github.com/johnpsasser/memex${NC}"
+echo -e "Docs: ${BLUE}https://github.com/0-to-1-Labs/memex${NC}"
 echo ""

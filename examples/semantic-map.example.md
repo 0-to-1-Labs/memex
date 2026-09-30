@@ -1,7 +1,8 @@
 # Semantic Map Example
 
-This is an example of a comprehensive keyword-to-documentation mapping.
-You can create a similar file for your project to enable the docs-loader skill.
+This is an example of a comprehensive keyword-to-documentation mapping, useful
+as a hand-written index for people and agents. Memex does not read this file:
+retrieval is automatic, and optional pins live in `docs/GLOSSARY.md`.
 
 ---
 
