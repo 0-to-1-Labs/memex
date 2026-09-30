@@ -1,13 +1,13 @@
 {
   "name": "memex",
-  "version": "1.0.1",
-  "description": "Context-aware documentation for Claude Code: a UserPromptSubmit hook that lexically retrieves and injects the most relevant doc sections under a token budget. Optional glossary pins; no keyword map required.",
+  "version": "2.0.0",
+  "description": "Context-aware documentation for Claude Code: a UserPromptSubmit hook that lexically retrieves and injects the most relevant doc sections (docs/ plus root *.md by default) under a token budget. Optional glossary pins; no keyword map required.",
   "author": {
     "name": "John Sasser",
-    "url": "https://github.com/johnpsasser"
+    "url": "https://github.com/0-to-1-Labs"
   },
-  "homepage": "https://github.com/johnpsasser/memex",
-  "repository": "https://github.com/johnpsasser/memex",
+  "homepage": "https://github.com/0-to-1-Labs/memex",
+  "repository": "https://github.com/0-to-1-Labs/memex",
   "license": "MIT",
   "keywords": [
     "documentation",
