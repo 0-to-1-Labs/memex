@@ -1,7 +1,7 @@
 ---
 name: memex-docs
 description: Use this skill when writing, editing, or creating documentation files (*.md) in the docs/ directory. Provides guidelines for token-efficient documentation that works with the Memex context-enricher system.
-version: 1.0.0
+version: 2.0.0
 ---
 
 # Memex Documentation Guidelines
@@ -12,7 +12,7 @@ Follow these rules when writing or editing documentation in this project.
 
 1. **Update existing content first** - Never add new sections when existing ones cover the same topic
 2. **Token efficiency** - Every token costs context budget
-3. **Section-level loading** - The context-enricher loads specific sections via anchors
+3. **Section-level loading** - The context-enricher injects the single best matching section of a doc, not the whole file; a glossary pin with a `#anchor` selects that heading's section
 4. **Single source of truth** - Document once, reference everywhere
 
 ## Size Limits
@@ -71,16 +71,21 @@ Show only relevant parts. Include just enough context to be useful.
 
 ## Section Headers
 
-Headers create anchor links for section-level loading:
+Headers create anchor links for section-level loading. The anchor is the
+heading text lowercased, punctuation removed, spaces replaced by hyphens:
 
 ```markdown
 ## Main Section       -> #main-section
 ### Subsection        -> #subsection
 ```
 
-Use descriptive headers that make good anchor names.
+Use descriptive headers that make good anchor names. Headings inside fenced
+code blocks are ignored.
 
-## GLOSSARY.md Format
+## GLOSSARY.md Format (optional pins)
+
+Retrieval works without a glossary. A pin boosts a doc when the keyword appears
+as a whole word in the prompt; a `#section` anchor selects that section.
 
 ```markdown
 ### Category Name
@@ -88,6 +93,9 @@ Use descriptive headers that make good anchor names.
 - **keyword** -> `path/to/FILE.md#section` - Brief description
 - **another-keyword** -> `path/to/FILE.md` - Brief description
 ```
+
+Paths are relative to the project root and must stay inside it (no `..`, no
+absolute paths, no symlinks).
 
 ## Update vs Add Decision
 
@@ -108,7 +116,7 @@ Use descriptive headers that make good anchor names.
 
 ## Pre-Commit Checklist
 
-- [ ] GLOSSARY.md updated with new keywords
+- [ ] GLOSSARY.md updated with new keywords (if the project uses pins)
 - [ ] No section exceeds 150 lines
 - [ ] No file exceeds 800 lines
 - [ ] Anchor links used for cross-references

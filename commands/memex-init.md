@@ -1,7 +1,6 @@
 ---
 name: memex-init
 description: Scaffold the Memex documentation structure (docs/ tree, GLOSSARY.md, CONTRIBUTING.md) and add the Memex section to CLAUDE.md. Run once per project after installing the Memex plugin.
-allowed-tools: Bash(mkdir:*), Bash(cp:*), Bash(test:*), Bash(cat:*), Bash(sed:*), Bash(grep:*), Bash(basename:*), Bash(date:*), Read, Write, Edit
 ---
 
 # Initialize Memex in this project
@@ -31,7 +30,7 @@ if [ ! -f "$ROOT/docs/working/.gitignore" ]; then
   printf '*\n!.gitignore\n' > "$ROOT/docs/working/.gitignore"
 fi
 
-# 3. GLOSSARY.md - the keyword -> doc map the context-enricher reads at runtime
+# 3. GLOSSARY.md - optional keyword -> doc pins the context-enricher reads at runtime
 if [ ! -f "$ROOT/docs/GLOSSARY.md" ]; then
   sed -e "s/{{PROJECT_NAME}}/$PROJECT_NAME/g" -e "s/{{DATE}}/$TODAY/g" \
     "$TPL/GLOSSARY.md.template" > "$ROOT/docs/GLOSSARY.md"
@@ -65,10 +64,10 @@ else
 fi
 
 echo ""
-echo "Memex initialized. Edit docs/GLOSSARY.md to map keywords to your docs."
+echo "Memex initialized. Retrieval is automatic; docs/GLOSSARY.md pins are optional."
 ```
 
 After running, briefly tell the user:
-1. Memex is initialized and the docs structure is ready.
-2. They should populate `docs/GLOSSARY.md` with `- **keyword** -> \`docs/path/FILE.md#section\`` entries — that map drives keyword-based auto-loading.
+1. Memex is initialized and the docs structure is ready. Retrieval is automatic: every prompt is searched against `docs/` and root `*.md` files, and the best matching sections are injected.
+2. Optionally, they can pin docs to keywords in `docs/GLOSSARY.md` with `- **keyword** -> \`docs/path/FILE.md#section\`` entries. A pin boosts that file when the keyword appears in a prompt; the `#section` anchor selects that heading's section. Pins are never required.
 3. The `memex-docs` skill provides the writing guidelines and will activate when they edit docs.
