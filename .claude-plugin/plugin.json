@@ -1,6 +1,6 @@
 {
   "name": "memex",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Context-aware documentation for Claude Code: a UserPromptSubmit hook that lexically retrieves and injects the most relevant doc sections under a token budget. Optional glossary pins; no keyword map required.",
   "author": {
     "name": "John Sasser",
